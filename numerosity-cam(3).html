@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Numerosity Solver</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:#06060e; --card:#0d0d1c; --border:rgba(255,255,255,0.06);
+    --accent:#6c5ce7; --gold:#fdcb6e; --green:#00b894;
+    --red:#e17055; --text:#dfe6e9; --dim:#555;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{background:var(--bg);color:var(--text);font-family:'Outfit',sans-serif;min-height:100dvh;display:flex;flex-direction:column}
+
+  /* ── Tabs ── */
+  .tabs{display:flex;gap:0;padding:8px 14px 0;flex-shrink:0}
+  .tab{flex:1;padding:10px;text-align:center;font-size:13px;font-weight:700;font-family:'DM Mono',monospace;
+    border:1px solid var(--border);background:transparent;color:var(--dim);cursor:pointer;transition:all .15s}
+  .tab:first-child{border-radius:10px 0 0 10px}
+  .tab:last-child{border-radius:0 10px 10px 0}
+  .tab.active{background:rgba(108,92,231,0.15);color:var(--accent);border-color:var(--accent)}
+
+  /* ── Camera view ── */
+  .camera-wrap{position:relative;width:100%;min-height:250px;max-height:48dvh;background:#000;overflow:hidden;flex-shrink:0}
+  video{width:100%;height:100%;object-fit:cover;display:block}
+  canvas#snapCanvas{display:none}
+  .scan-frame{position:absolute;top:4%;left:4%;right:4%;bottom:4%;border:2px solid rgba(108,92,231,0.3);border-radius:14px;pointer-events:none}
+  .corner{position:absolute;width:18px;height:18px;border-color:var(--accent);border-style:solid}
+  .corner.tl{top:-1px;left:-1px;border-width:3px 0 0 3px;border-radius:6px 0 0 0}
+  .corner.tr{top:-1px;right:-1px;border-width:3px 3px 0 0;border-radius:0 6px 0 0}
+  .corner.bl{bottom:-1px;left:-1px;border-width:0 0 3px 3px;border-radius:0 0 0 6px}
+  .corner.br{bottom:-1px;right:-1px;border-width:0 3px 3px 0;border-radius:0 0 6px 0}
+  .flash-overlay{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .1s}
+  .flash-overlay.active{opacity:.25}
+  .cam-error{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    background:rgba(0,0,0,0.85);color:var(--red);font-family:'DM Mono',monospace;font-size:12px;text-align:center;padding:20px;gap:10px}
+  .cam-error.hide{display:none}
+
+  /* ── Upload view ── */
+  .upload-area{width:100%;min-height:250px;max-height:48dvh;background:#000;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:12px;padding:20px;flex-shrink:0;position:relative;overflow:hidden}
+  .upload-area img{max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+  .upload-label{display:flex;flex-direction:column;align-items:center;gap:10px;cursor:pointer;z-index:2;
+    padding:24px 32px;border:2px dashed rgba(108,92,231,0.3);border-radius:16px;transition:all .2s}
+  .upload-label:active{background:rgba(108,92,231,0.1)}
+  .upload-label .icon{font-size:36px}
+  .upload-label .txt{font-size:13px;color:var(--dim);font-family:'DM Mono',monospace;text-align:center}
+  .upload-label input{display:none}
+  .upload-area.has-image .upload-label{position:absolute;bottom:12px;right:12px;padding:10px 16px;
+    background:rgba(0,0,0,0.7);border-color:rgba(255,255,255,0.1);border-radius:10px}
+  .upload-area.has-image .upload-label .icon{font-size:18px}
+  .upload-area.has-image .upload-label .txt{display:none}
+
+  /* ── Panel ── */
+  .panel{background:var(--card);border-top:1px solid var(--border);border-radius:20px 20px 0 0;
+    margin-top:-14px;position:relative;z-index:2;padding:16px 14px 24px;display:flex;flex-direction:column;gap:10px;overflow-y:auto}
+
+  .api-setup{background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:12px;padding:12px}
+  .api-setup input{width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);
+    background:rgba(0,0,0,0.3);color:var(--text);font-family:'DM Mono',monospace;font-size:12px;outline:none;margin-top:6px}
+  .api-setup input:focus{border-color:var(--accent)}
+  .api-setup .hint{font-size:10px;color:#444;font-family:'DM Mono',monospace;margin-top:4px}
+
+  .info-row{display:flex;gap:8px}
+  .info-box{flex:1;background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:12px;padding:8px;text-align:center}
+  .info-box .label{font-size:8px;letter-spacing:2px;color:var(--dim);font-family:'DM Mono',monospace;margin-bottom:2px}
+  .info-box .value{font-size:28px;font-weight:800;font-family:'DM Mono',monospace;line-height:1.1}
+  .info-box.target .value{color:var(--gold)}
+  .info-box.op .value{color:var(--accent)}
+
+  .section-label{font-size:8px;letter-spacing:2px;color:var(--dim);font-family:'DM Mono',monospace}
+
+  .nums-row{display:flex;flex-wrap:wrap;gap:6px;min-height:34px;align-items:center}
+  .num-chip{display:inline-flex;align-items:center;justify-content:center;min-width:38px;height:36px;padding:0 10px;
+    border-radius:18px;font-size:16px;font-weight:700;font-family:'DM Mono',monospace;animation:chipIn .25s cubic-bezier(.34,1.56,.64,1) both}
+  .num-chip.normal{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);color:#aaa}
+  .num-chip.gold{background:linear-gradient(135deg,var(--gold),#e0a020);border:1px solid var(--gold);color:#1a1a2e}
+  @keyframes chipIn{from{transform:scale(0);opacity:0}to{transform:scale(1);opacity:1}}
+
+  .solutions{display:flex;flex-direction:column;gap:4px;min-height:28px}
+  .sol-line{padding:8px 12px;border-radius:10px;font-family:'DM Mono',monospace;font-weight:500;font-size:15px;animation:slideUp .2s ease both}
+  .sol-line.best{background:rgba(0,184,148,0.1);border:1px solid rgba(0,184,148,0.15);color:var(--green);font-size:20px;font-weight:700}
+  .sol-line.alt{background:rgba(255,255,255,0.02);color:#666;font-size:14px}
+  @keyframes slideUp{from{transform:translateY(8px);opacity:0}to{transform:translateY(0);opacity:1}}
+
+  .btn-row{display:flex;gap:8px}
+  .btn{flex:1;padding:14px;border-radius:14px;border:none;font-size:14px;font-weight:700;font-family:'Outfit',sans-serif;cursor:pointer;transition:all .12s;letter-spacing:.5px}
+  .btn:active{transform:scale(.95)}
+  .btn.primary{background:linear-gradient(135deg,var(--accent),#8b5cf6);color:#fff}
+  .btn.primary:disabled{opacity:.35}
+  .btn.auto-btn{background:rgba(0,184,148,0.12);color:var(--green);border:2px solid rgba(0,184,148,0.2)}
+  .btn.auto-btn.running{background:rgba(225,112,85,0.12);color:var(--red);border-color:rgba(225,112,85,0.2)}
+
+  .status-bar{font-size:11px;color:var(--dim);font-family:'DM Mono',monospace;text-align:center;min-height:18px;
+    display:flex;align-items:center;justify-content:center;gap:8px}
+  .dot-loader{display:inline-flex;gap:3px}
+  .dot-loader span{width:5px;height:5px;border-radius:50%;background:var(--accent);animation:dotPulse 1s ease infinite}
+  .dot-loader span:nth-child(2){animation-delay:.15s}
+  .dot-loader span:nth-child(3){animation-delay:.3s}
+  @keyframes dotPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.6)}}
+
+  .hide{display:none!important}
+</style>
+</head>
+<body>
+
+<!-- ═══ Mode Tabs ═══ -->
+<div class="tabs">
+  <div class="tab active" id="tabCam" onclick="switchMode('camera')">📷 Caméra</div>
+  <div class="tab" id="tabUpload" onclick="switchMode('upload')">📁 Screenshot</div>
+</div>
+
+<!-- ═══ Camera View ═══ -->
+<div class="camera-wrap" id="cameraView">
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="snapCanvas"></canvas>
+  <div class="scan-frame">
+    <div class="corner tl"></div><div class="corner tr"></div>
+    <div class="corner bl"></div><div class="corner br"></div>
+  </div>
+  <div class="flash-overlay" id="flash"></div>
+  <div class="cam-error hide" id="camError">
+    <div style="font-size:24px">📷</div>
+    <div id="camErrorMsg">Caméra non disponible</div>
+    <div style="font-size:10px;color:#888;max-width:280px">Utilisez l'onglet "Screenshot" pour uploader une capture d'écran à la place</div>
+  </div>
+</div>
+
+<!-- ═══ Upload View ═══ -->
+<div class="upload-area hide" id="uploadView">
+  <img id="previewImg" class="hide" />
+  <label class="upload-label">
+    <div class="icon">📁</div>
+    <div class="txt">Appuyez pour prendre une photo<br>ou choisir une capture d'écran</div>
+    <input type="file" accept="image/*" capture="environment" id="fileInput" />
+  </label>
+</div>
+
+<!-- ═══ Panel ═══ -->
+<div class="panel">
+
+  <div class="api-setup" id="apiSetup">
+    <div class="section-label">CLÉ API ANTHROPIC</div>
+    <input type="password" id="apiKeyInput" placeholder="sk-ant-..." />
+    <div class="hint">Stockée localement · console.anthropic.com/settings/keys</div>
+  </div>
+
+  <div class="info-row">
+    <div class="info-box target">
+      <div class="label">RÉSULTAT</div>
+      <div class="value" id="targetVal">—</div>
+    </div>
+    <div class="info-box op">
+      <div class="label">OPÉRATION</div>
+      <div class="value" id="opVal">—</div>
+    </div>
+  </div>
+
+  <div class="section-label">NOMBRES DÉTECTÉS</div>
+  <div class="nums-row" id="numsRow">
+    <span style="color:#333;font-size:12px;font-family:'DM Mono',monospace">Scanner pour détecter...</span>
+  </div>
+
+  <div class="section-label">SOLUTION</div>
+  <div class="solutions" id="solutions"></div>
+
+  <div class="btn-row" id="cameraBtns">
+    <button class="btn primary" id="btnScan" onclick="scanCamera()">📸 SCANNER</button>
+    <button class="btn auto-btn" id="btnAuto" onclick="toggleAuto()">▶ AUTO</button>
+  </div>
+
+  <div class="btn-row hide" id="uploadBtns">
+    <button class="btn primary" id="btnAnalyze" onclick="analyzeUpload()">🔍 ANALYSER</button>
+  </div>
+
+  <div class="status-bar" id="status">Prêt</div>
+</div>
+
+<script>
+// ═════════════════════════════════════════════════════
+let mode = 'camera';
+let autoMode = false, autoTimer = null, scanning = false;
+let uploadedB64 = null;
+let cameraReady = false;
+
+const video = document.getElementById('video');
+const snapCanvas = document.getElementById('snapCanvas');
+const ctx = snapCanvas.getContext('2d');
+
+// ═════════════════════════════════════════════════════
+//  API KEY
+// ═════════════════════════════════════════════════════
+const apiKeyInput = document.getElementById('apiKeyInput');
+const savedKey = localStorage.getItem('nk') || '';
+if (savedKey) { apiKeyInput.value = savedKey; document.getElementById('apiSetup').classList.add('hide'); }
+
+apiKeyInput.addEventListener('change', () => {
+  const k = apiKeyInput.value.trim();
+  if (k.length > 10) {
+    localStorage.setItem('nk', k);
+    document.getElementById('apiSetup').classList.add('hide');
+    setStatus('Clé sauvegardée ✓');
+  }
+});
+
+function getKey() { return apiKeyInput.value.trim() || localStorage.getItem('nk') || ''; }
+
+// ═════════════════════════════════════════════════════
+//  MODE SWITCHING
+// ═════════════════════════════════════════════════════
+function switchMode(m) {
+  mode = m;
+  document.getElementById('tabCam').classList.toggle('active', m === 'camera');
+  document.getElementById('tabUpload').classList.toggle('active', m === 'upload');
+  document.getElementById('cameraView').classList.toggle('hide', m !== 'camera');
+  document.getElementById('uploadView').classList.toggle('hide', m !== 'upload');
+  document.getElementById('cameraBtns').classList.toggle('hide', m !== 'camera');
+  document.getElementById('uploadBtns').classList.toggle('hide', m !== 'upload');
+
+  if (m === 'camera' && !cameraReady) startCamera();
+  if (m !== 'camera' && autoMode) toggleAuto();
+}
+
+// ═════════════════════════════════════════════════════
+//  CAMERA
+// ═════════════════════════════════════════════════════
+async function startCamera() {
+  const errEl = document.getElementById('camError');
+  const errMsg = document.getElementById('camErrorMsg');
+
+  try {
+    // Check if getUserMedia is available
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error('getUserMedia non supporté — HTTPS requis');
+    }
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 960 } }
+    });
+
+    video.srcObject = stream;
+
+    // Wait for video to actually play
+    await new Promise((resolve, reject) => {
+      video.onloadedmetadata = () => {
+        video.play().then(resolve).catch(reject);
+      };
+      setTimeout(() => reject(new Error('Timeout caméra')), 8000);
+    });
+
+    cameraReady = true;
+    errEl.classList.add('hide');
+    setStatus('Caméra prête');
+
+  } catch (e) {
+    cameraReady = false;
+    errEl.classList.remove('hide');
+
+    if (e.name === 'NotAllowedError') {
+      errMsg.textContent = 'Permission caméra refusée — autorisez dans les paramètres du navigateur';
+    } else if (e.name === 'NotFoundError') {
+      errMsg.textContent = 'Aucune caméra détectée';
+    } else if (e.name === 'NotReadableError') {
+      errMsg.textContent = 'Caméra utilisée par une autre app';
+    } else if (e.message.includes('HTTPS')) {
+      errMsg.textContent = 'HTTPS requis — hébergez sur Netlify ou utilisez l\'onglet Screenshot';
+    } else {
+      errMsg.textContent = e.message;
+    }
+
+    setStatus('Caméra indisponible — utilisez Screenshot');
+    // Auto-switch to upload
+    setTimeout(() => switchMode('upload'), 1500);
+  }
+}
+
+function captureFrame() {
+  const w = video.videoWidth || 1280, h = video.videoHeight || 960;
+  snapCanvas.width = w; snapCanvas.height = h;
+  ctx.drawImage(video, 0, 0, w, h);
+  document.getElementById('flash').classList.add('active');
+  setTimeout(() => document.getElementById('flash').classList.remove('active'), 120);
+  return snapCanvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+}
+
+// ═════════════════════════════════════════════════════
+//  FILE UPLOAD — convert any image to JPEG via canvas
+// ═════════════════════════════════════════════════════
+let uploadedMediaType = 'image/jpeg';
+
+document.getElementById('fileInput').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  // Load image into canvas, then export as JPEG for consistent format
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    const tempImg = new Image();
+    tempImg.onload = function() {
+      // Draw to canvas and export as JPEG
+      const cvs = document.createElement('canvas');
+      cvs.width = tempImg.naturalWidth;
+      cvs.height = tempImg.naturalHeight;
+      const c = cvs.getContext('2d');
+      c.drawImage(tempImg, 0, 0);
+      const jpegDataUrl = cvs.toDataURL('image/jpeg', 0.85);
+      uploadedB64 = jpegDataUrl.split(',')[1];
+      uploadedMediaType = 'image/jpeg';
+
+      const preview = document.getElementById('previewImg');
+      preview.src = jpegDataUrl;
+      preview.classList.remove('hide');
+      document.getElementById('uploadView').classList.add('has-image');
+      setStatus('Image chargée — appuyez Analyser');
+    };
+    tempImg.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+});
+
+// ═════════════════════════════════════════════════════
+//  CLAUDE VISION API
+// ═════════════════════════════════════════════════════
+async function callClaude(b64) {
+  const key = getKey();
+  if (!key) {
+    document.getElementById('apiSetup').classList.remove('hide');
+    throw new Error('Clé API requise');
+  }
+
+  const body = {
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 200,
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } },
+        { type: 'text', text: `This is the Numerosity math game. Return ONLY JSON:
+{"target":<number>,"operation":"<+|-|*|/>","numbers":[<numbers in hexagons>]}
+
+- target = the RÉSULTAT/RESULT number (top right)
+- operation = the symbol shown: + − × ÷ (use + - * /)
+- numbers = all numbers in colored hexagons below
+
+ONLY valid JSON, no other text.` }
+      ]
+    }]
+  };
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!res.ok) {
+    let detail = '';
+    try { const err = await res.json(); detail = err.error?.message || JSON.stringify(err); } catch(_) { detail = await res.text(); }
+    console.error('API Error:', res.status, detail);
+    if (res.status === 401) throw new Error('Clé API invalide');
+    if (res.status === 429) throw new Error('Rate limit — attendez quelques secondes');
+    throw new Error(detail || ('API erreur ' + res.status));
+  }
+
+  const data = await res.json();
+  const text = data.content?.[0]?.text || '';
+  const m = text.match(/\{[\s\S]*\}/);
+  if (!m) throw new Error('Réponse invalide');
+  return JSON.parse(m[0]);
+}
+
+// ═════════════════════════════════════════════════════
+//  SOLVER
+// ═════════════════════════════════════════════════════
+const opFns = { '+':(a,b)=>a+b, '-':(a,b)=>a-b, '*':(a,b)=>a*b, '/':(a,b)=>b?a/b:null };
+const opSym = { '+':'+', '-':'−', '*':'×', '/':'÷' };
+
+function solve(nums, target, op) {
+  const fn = opFns[op];
+  if (!fn || nums.length < 2) return [];
+  const results = [], seen = new Set();
+  for (let sz = 2; sz <= Math.min(nums.length, 5); sz++) {
+    for (const c of combos(nums, sz)) {
+      const ps = sz <= 4 ? perms(c) : [c];
+      for (const p of ps) {
+        let v = p[0], ok = true;
+        for (let i = 1; i < p.length; i++) { v = fn(v, p[i]); if (v === null || !isFinite(v)) { ok = false; break; } }
+        if (ok && Math.abs(v - target) < 1e-6) {
+          const k = p.join(',');
+          if (!seen.has(k)) { seen.add(k); results.push([...p]); }
+        }
+        if (results.length >= 15) return results;
+      }
+    }
+  }
+  return results;
+}
+
+function combos(a, n) { if (!n) return [[]]; if (!a.length) return []; const [f, ...r] = a; return [...combos(r, n-1).map(c => [f, ...c]), ...combos(r, n)]; }
+function perms(a) { if (a.length <= 1) return [a]; const r = []; for (let i = 0; i < a.length; i++) { const rest = [...a.slice(0, i), ...a.slice(i + 1)]; for (const p of perms(rest)) r.push([a[i], ...p]); } return r; }
+
+// ═════════════════════════════════════════════════════
+//  UI
+// ═════════════════════════════════════════════════════
+function setStatus(msg, loading = false) {
+  const el = document.getElementById('status');
+  el.innerHTML = loading
+    ? `<span class="dot-loader"><span></span><span></span><span></span></span> ${msg}`
+    : msg;
+}
+
+function display(parsed) {
+  const { target, operation, numbers } = parsed;
+  const sym = opSym[operation] || operation;
+
+  document.getElementById('targetVal').textContent = target;
+  document.getElementById('opVal').textContent = sym;
+
+  const solutions = solve(numbers, target, operation);
+
+  const hl = new Set();
+  if (solutions.length) {
+    const best = solutions[0], used = Array(numbers.length).fill(false);
+    for (const v of best) for (let i = 0; i < numbers.length; i++) if (!used[i] && numbers[i] === v) { hl.add(i); used[i] = true; break; }
+  }
+
+  document.getElementById('numsRow').innerHTML = numbers.map((n, i) =>
+    `<span class="num-chip ${hl.has(i) ? 'gold' : 'normal'}" style="animation-delay:${i * 0.04}s">${n}</span>`
+  ).join('');
+
+  const solEl = document.getElementById('solutions');
+  if (!solutions.length) { solEl.innerHTML = '<div style="color:#e17055;font-family:DM Mono,monospace;font-size:13px">Pas de solution trouvée</div>'; return; }
+
+  solEl.innerHTML = solutions.slice(0, 6).map((sol, i) => {
+    const expr = sol.join(` ${sym} `) + ` = ${target}`;
+    return `<div class="sol-line ${i ? 'alt' : 'best'}" style="animation-delay:${i * 0.04}s">${i ? '' : '→ '}${expr}</div>`;
+  }).join('');
+}
+
+// ═════════════════════════════════════════════════════
+//  SCAN ACTIONS
+// ═════════════════════════════════════════════════════
+async function doScan(b64) {
+  if (scanning) return;
+  scanning = true;
+
+  try {
+    setStatus('Analyse en cours...', true);
+    const result = await callClaude(b64);
+    if (result?.target != null && result?.numbers) {
+      display(result);
+      setStatus(`✓ ${result.numbers.length} nombres · Résultat: ${result.target}`);
+    } else {
+      setStatus('Rien détecté — réessayez');
+    }
+  } catch (e) {
+    setStatus('Erreur: ' + e.message);
+    if (e.message.includes('Clé') || e.message.includes('401') || e.message.includes('invalide'))
+      document.getElementById('apiSetup').classList.remove('hide');
+  }
+
+  scanning = false;
+}
+
+async function scanCamera() {
+  if (!cameraReady) { setStatus('Caméra non disponible'); return; }
+  document.getElementById('btnScan').disabled = true;
+  const img = captureFrame();
+  await doScan(img);
+  document.getElementById('btnScan').disabled = false;
+}
+
+async function analyzeUpload() {
+  if (!uploadedB64) { setStatus('Choisissez une image d\'abord'); return; }
+  document.getElementById('btnAnalyze').disabled = true;
+  await doScan(uploadedB64);
+  document.getElementById('btnAnalyze').disabled = false;
+}
+
+async function toggleAuto() {
+  autoMode = !autoMode;
+  const btn = document.getElementById('btnAuto');
+  if (autoMode) {
+    btn.textContent = '■ STOP'; btn.classList.add('running');
+    autoLoop();
+  } else {
+    btn.textContent = '▶ AUTO'; btn.classList.remove('running');
+    if (autoTimer) clearTimeout(autoTimer);
+  }
+}
+
+async function autoLoop() {
+  if (!autoMode || !cameraReady) return;
+  await scanCamera();
+  if (autoMode) autoTimer = setTimeout(autoLoop, 3000);
+}
+
+// ═════════════════════════════════════════════════════
+//  INIT
+// ═════════════════════════════════════════════════════
+startCamera();
+</script>
+</body>
+</html>
